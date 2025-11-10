@@ -36,6 +36,22 @@ jobs:
           repository: lightningdevkit/ldk-node
           path: ldk-node
 
+      - name: Create Postgres config
+        run: |
+          mkdir -p vss-server/rust/server
+          cat > vss-server/rust/server/vss-server-config.toml <<EOF
+          [server_config]
+          host = "127.0.0.1"
+          port = 8080
+          store_type = "postgres"
+          [postgresql_config]
+          host = "localhost"
+          port = 5432
+          database = "postgres"
+          username = "postgres"
+          password = "postgres"
+          EOF
+
       - name: Build & Start VSS Server
         working-directory: vss-server/rust
         run: |
