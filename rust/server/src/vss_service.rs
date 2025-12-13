@@ -3,6 +3,8 @@ use hyper::body::{Bytes, Incoming};
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode};
 use std::collections::HashMap;
+use tracing::Instrument;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use prost::Message;
 
@@ -17,6 +19,8 @@ use api::types::{
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+
+use crate::tracing::extract_context;
 
 #[derive(Clone)]
 pub struct VssService {
@@ -90,6 +94,7 @@ async fn handle_list_object_request(
 ) -> Result<ListKeyVersionsResponse, VssError> {
 	store.list_key_versions(user_token, request).await
 }
+
 async fn handle_request<
 	T: Message + Default,
 	R: Message,
@@ -110,22 +115,32 @@ async fn handle_request<
 		Ok(auth_response) => auth_response.user_token,
 		Err(e) => return Ok(build_error_response(e)),
 	};
-	// TODO: we should bound the amount of data we read to avoid allocating too much memory.
-	let bytes = body.collect().await?.to_bytes();
-	match T::decode(bytes) {
-		Ok(request) => match handler(store.clone(), user_token, request).await {
-			Ok(response) => Ok(Response::builder()
-				.body(Full::new(Bytes::from(response.encode_to_vec())))
+
+	let parent_cx = extract_context(&headers_map);
+	let span = tracing::info_span!("ldk_node.request");
+	let _ = span.set_parent(parent_cx);
+
+	async move {
+		// TODO: we should bound the amount of data we read to avoid allocating too much memory.
+		let bytes = body.collect().await?.to_bytes();
+		println!("Request body size: {}", bytes.len());
+		match T::decode(bytes) {
+			Ok(request) => match handler(store.clone(), user_token, request).await {
+				Ok(response) => Ok(Response::builder()
+					.body(Full::new(Bytes::from(response.encode_to_vec())))
+					// unwrap safety: body only errors when previous chained calls failed.
+					.unwrap()),
+				Err(e) => Ok(build_error_response(e)),
+			},
+			Err(_) => Ok(Response::builder()
+				.status(StatusCode::BAD_REQUEST)
+				.body(Full::new(Bytes::from(b"Error parsing request".to_vec())))
 				// unwrap safety: body only errors when previous chained calls failed.
 				.unwrap()),
-			Err(e) => Ok(build_error_response(e)),
-		},
-		Err(_) => Ok(Response::builder()
-			.status(StatusCode::BAD_REQUEST)
-			.body(Full::new(Bytes::from(b"Error parsing request".to_vec())))
-			// unwrap safety: body only errors when previous chained calls failed.
-			.unwrap()),
+		}
 	}
+	.instrument(span)
+	.await
 }
 
 fn build_error_response(e: VssError) -> Response<Full<Bytes>> {
