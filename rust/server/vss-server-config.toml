@@ -1,6 +1,7 @@
 [server_config]
 host = "127.0.0.1"
 port = 8080
+# maximum_request_body_size = 10485760       # Optional:  maximum request body size in bytes capped at 20971520 (20 MB).
 
 [postgresql_config]
 username = "postgres"  # Optional in TOML, can be overridden by env var `VSS_POSTGRESQL_USERNAME`

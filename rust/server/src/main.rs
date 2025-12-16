@@ -17,7 +17,7 @@ use tokio::signal::unix::SignalKind;
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 
-use crate::vss_service::VssService;
+use crate::vss_service::{VssService, VssServiceConfig};
 use api::auth::{Authorizer, NoopAuthorizer};
 use api::kv_store::KvStore;
 use impls::postgres_store::{Certificate, PostgresPlaintextBackend, PostgresTlsBackend};
@@ -118,7 +118,10 @@ fn main() {
 					match res {
 						Ok((stream, _)) => {
 							let io_stream = TokioIo::new(stream);
-							let vss_service = VssService::new(Arc::clone(&store), Arc::clone(&authorizer));
+							let vss_service_config = if let Some(req_body_size) = config.server_config.maximum_request_body_size {
+								VssServiceConfig::new(req_body_size)
+							} else {VssServiceConfig::default()};
+							let vss_service = VssService::new(Arc::clone(&store), Arc::clone(&authorizer), vss_service_config);
 							runtime.spawn(async move {
 								if let Err(err) = http1::Builder::new().serve_connection(io_stream, vss_service).await {
 									eprintln!("Failed to serve connection: {}", err);

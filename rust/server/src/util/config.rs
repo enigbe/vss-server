@@ -10,6 +10,7 @@ pub(crate) struct Config {
 pub(crate) struct ServerConfig {
 	pub(crate) host: String,
 	pub(crate) port: u16,
+	pub(crate) maximum_request_body_size: Option<usize>,
 }
 
 #[derive(Deserialize)]
